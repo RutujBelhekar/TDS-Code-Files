@@ -21,8 +21,8 @@ damping = 0.95  # Damps internal particle vibrations relative to COM
 # ==========================
 # SHAPE-DEFORMING PERTURBATION PARAMETERS
 # ==========================
-A = 35.5  # Shape deformation amplitude
-omega = 6.0  # Driving frequency (rad/s)
+A = 70.5  # Shape deformation amplitude
+omega = 1.0  # Driving frequency (rad/s)
 time = 0.0  # Simulation time tracker
 
 # ==========================
