@@ -1,5 +1,7 @@
 Quadruple Pertubation.py (16/8/26)
-State:                                          Stable Moon Formed 
+
+State: Stable Moon Formed 
+
 Limiting Conditions:                            
 
 # ==========================
