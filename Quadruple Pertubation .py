@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation
+from matplotlib.widgets import Button
 
 # ==========================
 # GENTLE / STABLE PARAMETERS
@@ -13,6 +14,7 @@ dt = 0.01  # Timestep
 k_att = 0.1  # Gentle pull
 k_rep = 0.4  # Soft repulsion cushion
 interaction_radius = 5.0  # Interaction zone
+neighbor_radius = 1.5  # Max distance to be considered a neighbor
 r_core = 0.5  # Core radius
 
 # Center-of-mass internal damping
@@ -87,6 +89,7 @@ axx, ayy = compute_forces(x, y, time)
 # FIGURE SETUP
 # ==========================
 fig, ax = plt.subplots(figsize=(7, 7))
+fig.subplots_adjust(bottom=0.15)
 sc = ax.scatter(x, y, s=15, c="dodgerblue", edgecolors="none", alpha=0.6)
 
 ax.set_xlim(-12, 12)
@@ -94,13 +97,35 @@ ax.set_ylim(-12, 12)
 ax.set_aspect("equal")
 ax.grid(True, alpha=0.3)
 ax.set_title("Quadrupolar Shape Oscillations")
+dist_text = ax.text(0.05, 0.95, '', transform=ax.transAxes, color='limegreen', fontsize=12, fontweight='bold')
 
+# ==========================
+# BUTTON CALLBACK LOGIC
+# ==========================
 
+is_tracking_live = False 
+
+def toggle_tracking(event):
+    global is_tracking_live
+    is_tracking_live = not is_tracking_live
+    
+    if is_tracking_live:
+        btn.color = 'limegreen'
+        btn.label.set_text('Live Tracking: ON')
+    else:
+        btn.color = 'darkgray'
+        btn.label.set_text('Live Tracking: OFF')
+
+# Draw the Button at the bottom of the window
+ax_button = plt.axes([0.35, 0.05, 0.3, 0.06])
+btn = Button(ax_button, 'Live Tracking: OFF', color='darkgray', hovercolor='lightgray')
+btn.on_clicked(toggle_tracking)
 # ==========================
 # LEAPFROG UPDATE LOOP
 # ==========================
+
 def update(frame):
-  global x, y, vx, vy, axx, ayy, time
+  global x, y, vx, vy, axx, ayy, time, is_tracking_live
 
   # 1. Update Positions (Leapfrog step 1)
   x += vx * dt + 0.5 * axx * (dt**2)
@@ -127,7 +152,22 @@ def update(frame):
   vy = v_cm_y + (vy - v_cm_y) * damping
 
   sc.set_offsets(np.column_stack((x, y)))
-  return (sc,)
+  if is_tracking_live:
+        dx_mat = x[None, :] - x[:, None]
+        dy_mat = y[None, :] - y[:, None]
+        d_mat = np.sqrt(dx_mat**2 + dy_mat**2)
+        
+        i, j = np.triu_indices(N, k=1)
+        unique_distances = d_mat[i, j]
+        
+        neighbors = unique_distances[unique_distances < neighbor_radius]
+        
+        if len(neighbors) > 0:
+            avg_dist = np.mean(neighbors)
+            dist_text.set_text(f"Avg Neighbor Dist: {avg_dist:.4f}")
+        else:
+            dist_text.set_text("No neighbors in range!")
+  return (sc, dist_text)
 
 
 ani = FuncAnimation(fig, update, frames=1000, interval=15, blit=True)
