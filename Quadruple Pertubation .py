@@ -3,27 +3,24 @@ import numpy as np
 from matplotlib.animation import FuncAnimation
 
 # ==========================
-# GENTLE / STABLE PARAMETERS
+# SIMULATION PARAMETERS
 # ==========================
-N = 2200  # Particle count
-R = 6.0  # Initial spawn radius
-dt = 0.01  # Timestep
+N = 1500
+R = 10.0   
+dt = 0.005
+time = 0.0 # Can be a bit larger now that we fixed the explosion
 
-# Force strengths
-k_att = 0.1  # Gentle pull
-k_rep = 0.4  # Soft repulsion cushion
-interaction_radius = 5.0  # Interaction zone
-r_core = 0.5  # Core radius
+# Newtonian Gravity
+G = 2.5    # Increased slightly to hold the cloud together
+M = 1.0    
 
-# Center-of-mass internal damping
-damping = 0.95  # Damps internal particle vibrations relative to COM
+# Pseudo-Van der Waals (Softened for computer stability)
+k_vdw = 15.0   # Re-balanced for the new power law
+r_core = 0.5   
 
-# ==========================
-# SHAPE-DEFORMING PERTURBATION PARAMETERS
-# ==========================
-A = 70.5  # Shape deformation amplitude
-omega = 1.0  # Driving frequency (rad/s)
-time = 0.0  # Simulation time tracker
+# Gentle Spin
+v_spin = 3.5   # Lowered! If this is too high, they escape gravity and scatter
+damping = 0.99 # Dust friction to help them settle into a disk
 
 # ==========================
 # INITIAL PARTICLES
@@ -35,100 +32,101 @@ r = R * np.sqrt(np.random.rand(N))
 x = r * np.cos(theta)
 y = r * np.sin(theta)
 
-vx = np.zeros(N)
-vy = np.zeros(N)
+# Gentle Tangential Spin
+vx = -v_spin * np.sin(theta)
+vy =  v_spin * np.cos(theta)
 
-# Initialize accelerations for Leapfrog
 axx = np.zeros(N)
 ayy = np.zeros(N)
 
 # ==========================
 # FORCE FUNCTION
 # ==========================
-
-
+# Add time 't' to the function arguments
 def compute_forces(x, y, t):
-  """Computes internal cohesion + quadrupolar shape-deforming force."""
-  dx = x[None, :] - x[:, None]
-  dy = y[None, :] - y[:, None]
-  d = np.sqrt(dx * dx + dy * dy)
+    dx = x[None, :] - x[:, None]
+    dy = y[None, :] - y[:, None]
+    d = np.sqrt(dx * dx + dy * dy)
 
-  # Interaction mask
-  mask = (d < interaction_radius) & (d > 0.01)
+    mask = d > 0.01
+    d_safe = np.maximum(d, 0.2)
 
-  # 1. Long-range attraction
-  f_att = k_att * (interaction_radius - d)
+    # 1. NEWTONIAN GRAVITY
+    f_grav = np.zeros_like(d)
+    f_grav[mask] = (G * (M ** 2)) / (d_safe[mask] ** 2)
 
-  # 2. Short-range repulsion
-  f_rep = k_rep * (r_core / np.maximum(d, 0.05)) ** 2
+    # 2. SOFTENED REPULSION
+    f_vdw = np.zeros_like(d)
+    f_vdw[mask] = k_vdw * (r_core / d_safe[mask]) ** 4
 
-  # Net internal force matrix
-  force_net = np.zeros_like(d)
-  force_net[mask] = f_att[mask] - f_rep[mask]
+    force_net = np.zeros_like(d)
+    force_net[mask] = f_grav[mask] - f_vdw[mask]
 
-  # Sum internal forces
-  fx = np.sum(force_net * (dx / np.maximum(d, 1e-5)), axis=1)
-  fy = np.sum(force_net * (dy / np.maximum(d, 1e-5)), axis=1)
+    fx = np.sum(force_net * (dx / d_safe), axis=1)
+    fy = np.sum(force_net * (dy / d_safe), axis=1)
 
-  # 3. Quadrupolar Shape Deformation (X stretches, Y compresses)
-  x_rel = x - np.mean(x)
-  y_rel = y - np.mean(y)
+    # ====================================================
+    # 3. EXTERNAL TIDAL PERTURBATION (The new addition)
+    # ====================================================
+    A = 0.5      # Perturbation strength
+    omega = 1.0  # Perturbation frequency
+    
+    x_rel = x - np.mean(x)
+    y_rel = y - np.mean(y)
+    
+    # This will stretch and squeeze the spinning disk periodically
+    fx += A * x_rel * np.sin(omega * t)
+    fy -= A * y_rel * np.sin(omega * t)
 
-  fx += A * x_rel * np.sin(omega * t)
-  fy -= A * y_rel * np.sin(omega * t)
+    return fx, fy
 
-  return fx, fy
-
-
-# Compute initial acceleration at t = 0
 axx, ayy = compute_forces(x, y, time)
 
 # ==========================
 # FIGURE SETUP
 # ==========================
-fig, ax = plt.subplots(figsize=(7, 7))
-sc = ax.scatter(x, y, s=15, c="dodgerblue", edgecolors="none", alpha=0.6)
+fig, ax = plt.subplots(figsize=(8, 8))
+sc = ax.scatter(x, y, s=8, c="darkorange", edgecolors="none", alpha=0.6)
 
-ax.set_xlim(-12, 12)
-ax.set_ylim(-12, 12)
+ax.set_xlim(-15, 15)
+ax.set_ylim(-15, 15)
 ax.set_aspect("equal")
-ax.grid(True, alpha=0.3)
-ax.set_title("Quadrupolar Shape Oscillations")
-
+ax.grid(True, alpha=0.2)
+ax.set_facecolor('black')
+fig.patch.set_facecolor('black')
+ax.set_title("Stable Accretion Disk", color='white')
 
 # ==========================
 # LEAPFROG UPDATE LOOP
 # ==========================
 def update(frame):
-  global x, y, vx, vy, axx, ayy, time
+    global x, y, vx, vy, axx, ayy, time
 
-  # 1. Update Positions (Leapfrog step 1)
-  x += vx * dt + 0.5 * axx * (dt**2)
-  y += vy * dt + 0.5 * ayy * (dt**2)
+    x += vx * dt + 0.5 * axx * (dt**2)
+    y += vy * dt + 0.5 * ayy * (dt**2)
 
-  # Advance time
-  time += dt
+    new_axx, new_ayy = compute_forces(x, y, time)
 
-  # 2. Compute New Accelerations at t + dt
-  new_axx, new_ayy = compute_forces(x, y, time)
+    vx += 0.5 * (axx + new_axx) * dt
+    vy += 0.5 * (ayy + new_ayy) * dt
+    axx, ayy = new_axx, new_ayy
 
-  # 3. Update Velocities (Leapfrog step 2)
-  vx += 0.5 * (axx + new_axx) * dt
-  vy += 0.5 * (ayy + new_ayy) * dt
+    v_cm_x = np.mean(vx)
+    v_cm_y = np.mean(vy)
+    vx = v_cm_x + (vx - v_cm_x) * damping
+    vy = v_cm_y + (vy - v_cm_y) * damping
+    time += dt
+    
+    # Speed limit kept just in case of rare multi-particle collisions
+    speed = np.sqrt(vx**2 + vy**2)
+    max_speed = 40.0
+    overspeed_mask = speed > max_speed
+    if np.any(overspeed_mask):
+        vx[overspeed_mask] = (vx[overspeed_mask] / speed[overspeed_mask]) * max_speed
+        vy[overspeed_mask] = (vy[overspeed_mask] / speed[overspeed_mask]) * max_speed
 
-  # Update accelerations
-  axx, ayy = new_axx, new_ayy
+    sc.set_offsets(np.column_stack((x, y)))
+    return (sc,)
 
-  # 4. Center-of-Mass Frame Damping
-  v_cm_x = np.mean(vx)
-  v_cm_y = np.mean(vy)
-
-  vx = v_cm_x + (vx - v_cm_x) * damping
-  vy = v_cm_y + (vy - v_cm_y) * damping
-
-  sc.set_offsets(np.column_stack((x, y)))
-  return (sc,)
-
-
-ani = FuncAnimation(fig, update, frames=1000, interval=15, blit=True)
+ani = FuncAnimation(fig, update, frames=1500, interval=15, blit=True)
 plt.show()
