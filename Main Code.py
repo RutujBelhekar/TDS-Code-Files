@@ -32,12 +32,12 @@ time = 0.0 # Simulation Time Tracker
 np.random.seed(42)
 
 Theta = np.random.uniform(0, 2*np.pi, N) # Random Angle Generation for Particles 
-r = R*np.sqrt(np.random.rand(N)) # Random Radius Generation for Particles
+r = R * np.sqrt(np.random.rand(N)) # Random Radius Generation for Particles
 
 # Conversion to Cartesian from Polar Co-ords 
 
 x = r * np.cos(Theta) 
-y = r * np.cos(Theta)
+y = r * np.sin(Theta)
 
 #Parts initial Zero Velocity Components to count in leapfrog
 
