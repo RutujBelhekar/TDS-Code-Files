@@ -1,101 +1,110 @@
-# ===IMPORTS=== 
-
+# ==========================================
+# IMPORTS & BACKEND
+# ==========================================
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
 import numpy as np
-import vispy
-from vispy import app, scene
-from vispy.scene.cameras import TurntableCamera
-from vispy.scene.visuals import Markers, Text
 
+plt.close('all')
 
-# ===INITIAL CONDITIONS AND PARAMETERS===
+# ==========================================
+# CLASSICAL PARAMETERS (High-Resolution Setup)
+# ==========================================
+N = 100            # Particle Count
+M = 1.0            # Mass per particle
+dt = 0.00005       # MICRO-TIMESTEP: Prevents skipping past the potential wall
+sub_steps = 100    # Keeps visualization fast (100 physics ticks per frame)
+G = 0.2            # Gravitational constant
+K_stiff = 2e-6     # Stiffness of the physical repulsion field
+frames = 5000
 
-dt=0.01 # Timestep (time interval between each frame)
-M=1.0 # Mass of each particle
-T_total=200 #total time of simulation
-initial_radius=6.0 # Initial Spawn Radius
-N=600 # Particle Count
-np.random.seed(42)
-soft_core_parameter=0.35
-current_time=0.0
-steps_per_frame =1
+# ==========================================
+# INITIAL CONDITIONS
+# ==========================================
+initial_radius = 4.0
+theta = np.random.uniform(0, 2 * np.pi, N)
+r_dist = initial_radius * np.sqrt(np.random.rand(N))
+pos = np.column_stack((r_dist * np.cos(theta), r_dist * np.sin(theta)))
 
-u=np.random.uniform(-1,1,N) #Random Uniform Distribution for Z-axis
+# Tiny jitter to break perfect symmetry so they don't all hit (0,0) simultaneously
+v = np.random.uniform(-0.05, 0.05, (N, 2))
 
-Theta=np.random.uniform(0,2*np.pi,N)
-r=initial_radius*np.cbrt(np.random.rand(N))
+# Precompute index pairs for vectorized O(N^2) calculations
+i_idx, j_idx = np.tril_indices(N, k=-1)
 
-#Particle Co-ordinates in Cartesian
-x=r*np.sqrt(1-u**2)*np.cos(Theta) 
-y=r*np.sqrt(1-u**2)*np.sin(Theta)
-z=r*u
-pos = np.column_stack((x, y, z))
-
-#Velocity Components
-v = np.zeros((N, 3))
-
-#Acceleration Components
-a = np.zeros((N, 3))
-
-#Coeffients
-G_grav = 1.2 # Co-efficient of Attractive Force (Directly Prop to Dist)
-K_rep=0.4 # Co-efficient of Repulsive Force (Directly Prop to Dist)
-
-# ===FUNCTION DEFINITIONS=== 
-
-i_idx, j_idx = np.triu_indices(N, k=1)
-
-def force_triangular(pos):
-    # Use the global pre-calculated indices
-    diff = pos[j_idx] - pos[i_idx]
-    d = np.sqrt(np.sum(diff**2, axis=1) + soft_core_parameter**2)
-
-    f_mag = (G_grav * M * M) / (d**2) - (K_rep / d**2)
-    f_vec = (diff / d[:, None]) * f_mag[:, None]
-
-    f_net = np.zeros_like(pos)
+# ==========================================
+# PURE CONSERVATIVE PHYSICS ENGINE
+# ==========================================
+def get_forces_and_pe(pos):
+    """Calculates perfectly conservative pure force fields"""
+    diff = pos[i_idx] - pos[j_idx]
+    # 1e-12 added only to prevent raw zero in initial np.sqrt
+    dist = np.sqrt(np.sum(diff**2, axis=1) + 1e-12)
+    
+    # 1. Newtonian Gravity (Attractive)
+    f_grav_mag = (G * M * M) / (dist**2)
+    PE_grav = np.sum(- (G * M * M) / dist)
+    
+    # 2. Pure Hard-Core Repulsive Field (Inverse 12th power law)
+    f_rep_mag = (12 * K_stiff) / (dist**13)
+    PE_rep = np.sum(K_stiff / (dist**12))
+    
+    # 3. Net Force Assembly
+    f_net_mag = f_rep_mag - f_grav_mag
+    f_vec = (diff / dist[:, None]) * f_net_mag[:, None]
+    
+    f_net = np.zeros((N, 2))
     np.add.at(f_net, i_idx, f_vec)
     np.add.at(f_net, j_idx, -f_vec)
+    
+    Total_PE = PE_grav + PE_rep
+    return f_net / M, Total_PE
 
-    return f_net / M
+# ==========================================
+# INITIALIZATION & LIVE PLOTTING SETUP
+# ==========================================
+plt.ion()
+fig, ax = plt.subplots(figsize=(7, 7))
+fig.patch.set_facecolor('black')
+ax.set_facecolor('black')
+ax.set_xlim(-6, 6)
+ax.set_ylim(-6, 6)
 
-# ====VisPy Setup====
+scat = ax.scatter(pos[:, 0], pos[:, 1], s=35, c='cyan', edgecolors='none')
+title = ax.set_title("Calculating Physics...", color='white')
 
-canvas=scene.SceneCanvas(keys='interactive', size=(800,600), show=True, bgcolor='black', title='N-Body Particle Simulation')
-view=canvas.central_widget.add_view()
+# Get absolute initial energy for the Velocity Verlet setup
+a, current_PE = get_forces_and_pe(pos)
+initial_KE = np.sum(0.5 * M * np.sum(v**2, axis=1))
+E_initial = current_PE + initial_KE
 
-view.camera=TurntableCamera(fov=45,distance=20)
-markers=scene.visuals.Markers(parent=view.scene, scaling=False)
-markers.set_data(pos=pos, face_color='white', size=1)
+# ==========================================
+# MAIN SIMULATION LOOP (Velocity Verlet)
+# ==========================================
+for step in range(frames):
+    
+    # Sub-stepping handles the microscopic dt
+    for _ in range(sub_steps):
+        # Velocity Verlet Integration
+        v += 0.5 * a * dt          # 1. Half-step velocity
+        pos += v * dt              # 2. Full-step position
+        a, current_PE = get_forces_and_pe(pos) # 3. Re-evaluate forces precisely
+        v += 0.5 * a * dt          # 4. Final half-step velocity
+        
+    # Visuals and Energy Tracking
+    if step % 2 == 0:
+        current_KE = np.sum(0.5 * M * np.sum(v**2, axis=1))
+        current_E = current_KE + current_PE
+        
+        # Calculate the error (drift) from the absolute starting energy
+        drift = current_E - E_initial
+        
+        scat.set_offsets(pos)
+        title.set_text(f"Frame: {step*sub_steps} | Total E: {current_E:.4f} | Drift: {drift:.4f}")
+        
+        fig.canvas.draw_idle()
+        fig.canvas.flush_events()
 
-# ====Leapfrog Integration Loop====
-
-a=force_triangular(pos)
-v_half= v+0.5*dt*a
-
-# ====Leapfrog Integration Loop====
-
-a = force_triangular(pos)
-v_half = v + 0.5 * dt * a
-
-def update(event):
-    global pos, v_half, current_time
-
-    # ALL of this must be indented 4 spaces so it belongs to the function
-    for _ in range(steps_per_frame):    
-        if current_time >= T_total:
-            print(f"Simulation complete! Reached T={T_total}")
-            timer.stop()
-            return  # Tells the function to completely stop running
-
-        pos += v_half * dt
-        a_new = force_triangular(pos)
-        v_half += a_new * dt
-        current_time += dt
-
-    # These also belong inside the function, aligned with the 'for' loop
-    markers.set_data(pos=pos.copy())
-    canvas.update()
-
-timer = app.Timer(interval=0, connect=update, start=True)
-if __name__ == '__main__':
-    app.run()
+plt.ioff()
+plt.show()
