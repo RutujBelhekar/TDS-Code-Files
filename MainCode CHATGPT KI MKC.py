@@ -13,7 +13,7 @@ dt=0.01 # Timestep (time interval between each frame)
 M=1.0 # Mass of each particle
 T_total=200 #total time of simulation
 initial_radius=6.0 # Initial Spawn Radius
-N=2000 # Particle Count
+N=600 # Particle Count
 np.random.seed(42)
 soft_core_parameter=0.35
 current_time=0.0
