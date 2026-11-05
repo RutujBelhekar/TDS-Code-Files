@@ -6,12 +6,12 @@ import numpy as np
 
 
 m=1
-n=100
-inirad=5.0
+n=200
+inirad=4.2
 softcore=0.35
-G=0.5 
-Krep=0.0001
-dt=0.001
+G=4.0 
+Krep=0.005
+dt=0.0001
 
 
 np.random.seed(67)
@@ -28,29 +28,54 @@ a=np.zeros((n,2))
 
 i_idx,j_idx=np.tril_indices(n,k=-1)
 
-def forces(x,y):
-    dx=x[i_idx]-x[j_idx]
-    dy=y[i_idx]-y[j_idx]
-    dsq=(dx*dx+dy*dy+softcore**2)
+def forces(pos):
+    diff=pos[i_idx]-pos[j_idx]
+    dsq=(diff**2).sum(axis=1)+softcore**2
     d=np.sqrt(dsq)
     Fgrav=G*m*m/d**2
     Frep=Krep/d**12
     Fnet=Frep-Fgrav
-    fx=(Fnet*dx/d).sum(axis=1)
-    fy=(Fnet*dy/d).sum(axis=1)
-    ax=fx/m
-    ay=fy/m
-    return fx,fy,ax,ay
+    Fvec=(diff/d[:,None])*Fnet[:,None]
+    Ftot=np.zeros((n,2))
+    np.add.at(Ftot,i_idx,Fvec)
+    np.add.at(Ftot,j_idx,-Fvec)
+    anet=Ftot/m
+    return anet,Ftot
 
-plt.ion()
+anet,Fnet=forces(pos)
+
+for frames in range (1000000):
+
+    v+=anet*0.5*dt
+    pos+=v*dt
+    anet,Fnet=forces(pos)
+    v+=anet*0.5*dt
+    if frames % 100000 == 0:
+        print(f"Frame {frames} / 1000000 calculated...")
+
+print("Simulation complete! Rendering snapshot...")
 fig,ax= plt.subplots(figsize=(10,10))
 ax.set_xlim(-10,10)
 ax.set_ylim(-10,10)
 
-scat=ax.scatter(x,y)
-
-_,_,ax,ay=forces(x,y)
-
+scat=ax.scatter(pos[:,0],pos[:,1])
+plt.show()
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+#  if frames % 10 == 0:
+#       scat.set_offsets(pos)
+#        fig.canvas.draw_idle()
+#        fig.canvas.flush_events()
