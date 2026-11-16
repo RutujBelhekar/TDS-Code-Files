@@ -61,21 +61,3 @@ ax.set_ylim(-10,10)
 scat=ax.scatter(pos[:,0],pos[:,1])
 plt.show()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#  if frames % 10 == 0:
-#       scat.set_offsets(pos)
-#        fig.canvas.draw_idle()
-#        fig.canvas.flush_events()
